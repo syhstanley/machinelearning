@@ -708,10 +708,15 @@ namespace Microsoft.ML.Trainers.LightGbm
             GetMetainfo(ch, factory, out int numRow, out float[] labels, out float[] weights, out int[] groups);
 
             // Construct validation dataset.
-            Dataset dvalid = new Dataset(dtrain, numRow, labels, weights, groups);
+            // A dataset created by reference reserves per-row query metadata when the training dataset
+            // has groups. Populate that metadata while pushing validation rows instead of setting group
+            // boundaries up front, since FinishLoad rebuilds the boundaries from the per-row queries.
+            Dataset dvalid = new Dataset(dtrain, numRow, labels, weights);
+            int[] queries = GetQueryIds(groups, numRow);
 
             // Push rows into dataset.
-            LoadDataset(ch, factory, dvalid, numRow, LightGbmTrainerOptions.BatchSize, catMetaData);
+            LoadDataset(ch, factory, dvalid, numRow, LightGbmTrainerOptions.BatchSize, catMetaData,
+                labels, weights, queries);
 
             return dvalid;
         }
@@ -819,6 +824,24 @@ namespace Microsoft.ML.Trainers.LightGbm
                 }
                 groups = groupList.ToArray();
             }
+        }
+
+        private static int[] GetQueryIds(int[] groups, int numRow)
+        {
+            if (groups == null)
+                return null;
+
+            int[] queries = new int[numRow];
+            int row = 0;
+            for (int query = 0; query < groups.Length; ++query)
+            {
+                Contracts.Assert(groups[query] > 0);
+                Contracts.Assert(row <= numRow - groups[query]);
+                for (int i = 0; i < groups[query]; ++i)
+                    queries[row++] = query;
+            }
+            Contracts.Assert(row == numRow);
+            return queries;
         }
 
         /// <summary>
@@ -1022,13 +1045,18 @@ namespace Microsoft.ML.Trainers.LightGbm
         /// <summary>
         /// Load dataset. Use row batch way to reduce peak memory cost.
         /// </summary>
-        private void LoadDataset(IChannel ch, FloatLabelCursor.Factory factory, Dataset dataset, int numRow, int batchSize, CategoricalMetaData catMetaData)
+        private void LoadDataset(IChannel ch, FloatLabelCursor.Factory factory, Dataset dataset, int numRow, int batchSize,
+            CategoricalMetaData catMetaData, float[] labels = null, float[] weights = null, int[] queries = null)
         {
             Host.AssertValue(ch);
             ch.AssertValue(factory);
             ch.AssertValue(dataset);
             ch.Assert(dataset.GetNumRows() == numRow);
             ch.Assert(dataset.GetNumCols() == catMetaData.NumCol);
+            ch.Assert(queries == null || labels != null);
+            ch.Assert(labels == null || labels.Length == numRow);
+            ch.Assert(weights == null || weights.Length == numRow);
+            ch.Assert(queries == null || queries.Length == numRow);
             var rand = Host.Rand;
             // To avoid array resize, batch size should bigger than size of one row.
             batchSize = Math.Max(batchSize, catMetaData.NumCol);
@@ -1063,7 +1091,13 @@ namespace Microsoft.ML.Trainers.LightGbm
                             ch.Assert(numElem == curRowCount * catMetaData.NumCol);
                             // PushRows is run by multi-threading inside, so lock here.
                             lock (LightGbmShared.LockForMultiThreadingInside)
-                                dataset.PushRows(features, curRowCount, catMetaData.NumCol, totalRowCount - curRowCount);
+                            {
+                                if (queries == null)
+                                    dataset.PushRows(features, curRowCount, catMetaData.NumCol, totalRowCount - curRowCount);
+                                else
+                                    dataset.PushRowsWithMetadata(features, curRowCount, catMetaData.NumCol,
+                                        totalRowCount - curRowCount, labels, weights, queries);
+                            }
                             curRowCount = 0;
                             numElem = 0;
                         }
@@ -1074,7 +1108,13 @@ namespace Microsoft.ML.Trainers.LightGbm
                         ch.Assert(numElem == curRowCount * catMetaData.NumCol);
                         // PushRows is run by multi-threading inside, so lock here.
                         lock (LightGbmShared.LockForMultiThreadingInside)
-                            dataset.PushRows(features, curRowCount, catMetaData.NumCol, totalRowCount - curRowCount);
+                        {
+                            if (queries == null)
+                                dataset.PushRows(features, curRowCount, catMetaData.NumCol, totalRowCount - curRowCount);
+                            else
+                                dataset.PushRowsWithMetadata(features, curRowCount, catMetaData.NumCol,
+                                    totalRowCount - curRowCount, labels, weights, queries);
+                        }
                     }
                 }
             }
@@ -1102,8 +1142,17 @@ namespace Microsoft.ML.Trainers.LightGbm
                             // PushRows is run by multi-threading inside, so lock here.
                             lock (LightGbmShared.LockForMultiThreadingInside)
                             {
-                                dataset.PushRows(indptr, indices, features,
-                                    curRowCount + 1, numElem, catMetaData.NumCol, totalRowCount - curRowCount);
+                                if (queries == null)
+                                {
+                                    dataset.PushRows(indptr, indices, features,
+                                        curRowCount + 1, numElem, catMetaData.NumCol, totalRowCount - curRowCount);
+                                }
+                                else
+                                {
+                                    dataset.PushRowsWithMetadata(indptr, indices, features,
+                                        curRowCount + 1, numElem, catMetaData.NumCol, totalRowCount - curRowCount,
+                                        labels, weights, queries);
+                                }
                             }
                             curRowCount = 0;
                             numElem = 0;
@@ -1122,8 +1171,17 @@ namespace Microsoft.ML.Trainers.LightGbm
                         // PushRows is run by multi-threading inside, so lock here.
                         lock (LightGbmShared.LockForMultiThreadingInside)
                         {
-                            dataset.PushRows(indptr, indices, features, curRowCount + 1,
-                                numElem, catMetaData.NumCol, totalRowCount - curRowCount);
+                            if (queries == null)
+                            {
+                                dataset.PushRows(indptr, indices, features, curRowCount + 1,
+                                    numElem, catMetaData.NumCol, totalRowCount - curRowCount);
+                            }
+                            else
+                            {
+                                dataset.PushRowsWithMetadata(indptr, indices, features, curRowCount + 1,
+                                    numElem, catMetaData.NumCol, totalRowCount - curRowCount,
+                                    labels, weights, queries);
+                            }
                         }
                     }
                 }

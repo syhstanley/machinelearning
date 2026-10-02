@@ -114,6 +114,32 @@ namespace Microsoft.ML.Trainers.LightGbm
             return DatasetPushRows(dataset, data, CApiDType.Float32, numRow, numCol, startRowIdx);
         }
 
+        [DllImport(DllName, EntryPoint = "LGBM_DatasetPushRowsWithMetadata", CallingConvention = CallingConvention.StdCall)]
+        private static extern int DatasetPushRowsWithMetadata(SafeDataSetHandle dataset,
+            float[] data,
+            CApiDType dataType,
+            int numRow,
+            int numCol,
+            int startRowIdx,
+            IntPtr labels,
+            IntPtr weights,
+            IntPtr initScores,
+            IntPtr queries,
+            int threadId);
+
+        public static int DatasetPushRowsWithMetadata(SafeDataSetHandle dataset,
+            float[] data,
+            int numRow,
+            int numCol,
+            int startRowIdx,
+            IntPtr labels,
+            IntPtr weights,
+            IntPtr queries)
+        {
+            return DatasetPushRowsWithMetadata(dataset, data, CApiDType.Float32, numRow, numCol, startRowIdx,
+                labels, weights, IntPtr.Zero, queries, 0);
+        }
+
         [DllImport(DllName, EntryPoint = "LGBM_DatasetPushRowsByCSR", CallingConvention = CallingConvention.StdCall)]
         private static extern int DatasetPushRowsByCsr(SafeDataSetHandle dataset,
             int[] indPtr,
@@ -139,6 +165,40 @@ namespace Microsoft.ML.Trainers.LightGbm
                 indPtr, CApiDType.Int32,
                 indices, data, CApiDType.Float32,
                 nIndPtr, numElem, numCol, startRowIdx);
+        }
+
+        [DllImport(DllName, EntryPoint = "LGBM_DatasetPushRowsByCSRWithMetadata", CallingConvention = CallingConvention.StdCall)]
+        private static extern int DatasetPushRowsByCsrWithMetadata(SafeDataSetHandle dataset,
+            int[] indPtr,
+            CApiDType indPtrType,
+            int[] indices,
+            float[] data,
+            CApiDType dataType,
+            long nIndPtr,
+            long numElem,
+            long startRowIdx,
+            IntPtr labels,
+            IntPtr weights,
+            IntPtr initScores,
+            IntPtr queries,
+            int threadId);
+
+        public static int DatasetPushRowsByCsrWithMetadata(SafeDataSetHandle dataset,
+            int[] indPtr,
+            int[] indices,
+            float[] data,
+            long nIndPtr,
+            long numElem,
+            long startRowIdx,
+            IntPtr labels,
+            IntPtr weights,
+            IntPtr queries)
+        {
+            return DatasetPushRowsByCsrWithMetadata(dataset,
+                indPtr, CApiDType.Int32,
+                indices, data, CApiDType.Float32,
+                nIndPtr, numElem, startRowIdx,
+                labels, weights, IntPtr.Zero, queries, 0);
         }
 
         [DllImport(DllName, EntryPoint = "LGBM_DatasetFree", CallingConvention = CallingConvention.StdCall)]

@@ -125,6 +125,32 @@ namespace Microsoft.ML.Trainers.LightGbm
             _lastPushedRowID = startRowIdx + numRow;
         }
 
+        public unsafe void PushRowsWithMetadata(float[] data, int numRow, int numCol, int startRowIdx,
+            float[] labels, float[] weights, int[] queries)
+        {
+            Contracts.Assert(startRowIdx == _lastPushedRowID);
+            Contracts.Assert(numCol == GetNumCols());
+            Contracts.Assert(numRow > 0);
+            Contracts.Assert(startRowIdx <= GetNumRows() - numRow);
+            Contracts.AssertValue(labels);
+            Contracts.Assert(labels.Length == GetNumRows());
+            Contracts.Assert(weights == null || weights.Length == GetNumRows());
+            Contracts.AssertValue(queries);
+            Contracts.Assert(queries.Length == GetNumRows());
+
+            fixed (float* labelsPtr = labels)
+            fixed (float* weightsPtr = weights)
+            fixed (int* queriesPtr = queries)
+            {
+                LightGbmInterfaceUtils.Check(WrappedLightGbmInterface.DatasetPushRowsWithMetadata(
+                    _handle, data, numRow, numCol, startRowIdx,
+                    (IntPtr)(labelsPtr + startRowIdx),
+                    weightsPtr == null ? IntPtr.Zero : (IntPtr)(weightsPtr + startRowIdx),
+                    (IntPtr)(queriesPtr + startRowIdx)));
+            }
+            _lastPushedRowID = startRowIdx + numRow;
+        }
+
         public void PushRows(int[] indPtr, int[] indices, float[] data, int nIndptr,
             long numElem, int numCol, int startRowIdx)
         {
@@ -134,6 +160,31 @@ namespace Microsoft.ML.Trainers.LightGbm
             LightGbmInterfaceUtils.Check(
                 WrappedLightGbmInterface.DatasetPushRowsByCsr(
                     _handle, indPtr, indices, data, nIndptr, numElem, numCol, startRowIdx));
+            _lastPushedRowID = startRowIdx + nIndptr - 1;
+        }
+
+        public unsafe void PushRowsWithMetadata(int[] indPtr, int[] indices, float[] data, int nIndptr,
+            long numElem, int numCol, int startRowIdx, float[] labels, float[] weights, int[] queries)
+        {
+            Contracts.Assert(startRowIdx == _lastPushedRowID);
+            Contracts.Assert(numCol == GetNumCols());
+            Contracts.Assert(startRowIdx < GetNumRows());
+            Contracts.AssertValue(labels);
+            Contracts.Assert(labels.Length == GetNumRows());
+            Contracts.Assert(weights == null || weights.Length == GetNumRows());
+            Contracts.AssertValue(queries);
+            Contracts.Assert(queries.Length == GetNumRows());
+
+            fixed (float* labelsPtr = labels)
+            fixed (float* weightsPtr = weights)
+            fixed (int* queriesPtr = queries)
+            {
+                LightGbmInterfaceUtils.Check(WrappedLightGbmInterface.DatasetPushRowsByCsrWithMetadata(
+                    _handle, indPtr, indices, data, nIndptr, numElem, startRowIdx,
+                    (IntPtr)(labelsPtr + startRowIdx),
+                    weightsPtr == null ? IntPtr.Zero : (IntPtr)(weightsPtr + startRowIdx),
+                    (IntPtr)(queriesPtr + startRowIdx)));
+            }
             _lastPushedRowID = startRowIdx + nIndptr - 1;
         }
 
